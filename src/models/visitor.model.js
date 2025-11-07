@@ -12,6 +12,7 @@ const visitorSchema = new mongoose.Schema({
     match: Boolean,
     confidence: Number,
     verifiedImageUrl: String,
+    remarks: String,
   }
 });
 

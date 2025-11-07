@@ -70,7 +70,12 @@ exports.getVisitorsByDate = async (req, res) => {
       scheduledAt: {
         $gte: startOfDay,
         $lte: endOfDay
-      }
+      },
+      $or: [
+        { verificationResult: { $exists: false } },
+        { verificationResult: null },
+        { 'verificationResult.match': { $exists: false } }
+      ]
     });
 
     res.json(visitors);
@@ -133,15 +138,100 @@ exports.verifyVisitor = async (req, res) => {
     const { match, confidence } = pythonResponse.data;
     console.log(`Verification result for visitor ID ${id}: match=${match}, confidence=${confidence}`);
 
+    // send verified image(face capture image) to S3
+    let verifiedImageUrl = null;
+
+    const verifiedImageParams = {
+      Bucket: process.env.BUCKET_NAME,
+      Key: `verified_${Date.now()}_${id}.jpg`,
+      Body: fc_image,
+      ContentType: 'image/jpeg',
+    };
+
+    const uploadCommand = new PutObjectCommand(verifiedImageParams);
+    await s3Client.send(uploadCommand);
+    verifiedImageUrl = `https://${process.env.BUCKET_NAME}.s3.${process.env.BUCKET_REGION}.amazonaws.com/${verifiedImageParams.Key}`;
+
+    // If match is true, update visitor document
+    if (match) {
+      // Update visitor document
+      visitor.verifiedAt = new Date();
+      visitor.verificationResult = {
+        match: match,
+        confidence: confidence,
+        verifiedImageUrl: verifiedImageUrl,
+        remarks: 'automated verification passed',
+      };
+      await visitor.save();
+
+      console.log(`Visitor ${id} verified successfully. Verified image saved to S3: ${verifiedImageUrl}`);
+    }
+
     res.status(200).json({
       match,
       confidence,
       visitorId: id,
       visitorName: visitor.fullName,
+      previsitImage: pv_image.toString('base64'),
+      facecaptureImage: fc_image.toString('base64'),
+      verifiedImageUrl: verifiedImageUrl,
     });
 
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to verify visitor' });
+  }
+};
+
+exports.manualVerifyVisitor = async (req, res) => {
+  try {
+    const { id, match, confidence, verifiedImageUrl, remarks } = req.body;
+    console.log('Manual verification request received:', req.body);
+
+    if (!id) {
+      return res.status(400).json({ error: 'Visitor ID is required' });
+    }
+
+    if (!remarks) {
+      return res.status(400).json({ error: 'Remarks field is required' });
+    }
+
+    const visitor = await Visitor.findById(id);
+    if (!visitor) {
+      return res.status(404).json({ error: 'Visitor not found' });
+    }
+
+    let remarksText;
+    if (remarks === 'failed') {
+      remarksText = 'manual verification failed';
+    } else if (remarks === 'verified') {
+      remarksText = 'manual verification passed';
+    } else {
+      return res.status(400).json({ error: 'Invalid remarks value. Must be "failed" or "verified"' });
+    }
+
+    // Update visitor document
+    visitor.verifiedAt = new Date();
+    visitor.verificationResult = {
+      match: match,
+      confidence: confidence,
+      verifiedImageUrl: verifiedImageUrl,
+      remarks: remarksText,
+    };
+    await visitor.save();
+
+    console.log(`Manual verification for visitor ${id}: ${remarksText}`);
+
+    res.status(200).json({
+      message: 'Manual verification completed',
+      visitorId: id,
+      visitorName: visitor.fullName,
+      verifiedAt: visitor.verifiedAt,
+      verificationResult: visitor.verificationResult,
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to manually verify visitor' });
   }
 };
