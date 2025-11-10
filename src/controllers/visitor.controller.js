@@ -17,6 +17,10 @@ const s3Client = new S3Client({
 
 exports.registerVisitor = async (req, res) => {
   try {
+    console.log('Registration request received for:', req.body.fullName);
+    console.log('Scheduled visit date:', req.body.scheduledAt);
+    console.log('Uploaded image size:', req.file.size, 'bytes');
+
     const params = {
       Bucket: process.env.BUCKET_NAME,
       Key: `${Date.now()}_${req.file.originalname}`,
@@ -27,6 +31,7 @@ exports.registerVisitor = async (req, res) => {
     const command = new PutObjectCommand(params);
     await s3Client.send(command);
     const imageUrl = `https://${process.env.BUCKET_NAME}.s3.${process.env.BUCKET_REGION}.amazonaws.com/${command.input.Key}`;
+    console.log('Image uploaded to S3:', imageUrl);
 
     const visitor = new Visitor({
       fullName: req.body.fullName,
@@ -36,9 +41,11 @@ exports.registerVisitor = async (req, res) => {
       imageUrl,
     });
     await visitor.save();
+    console.log('Visitor registered successfully with ID:', visitor._id);
+
     res.status(201).json(visitor);
   } catch (err) {
-    console.error(err);
+    console.error('Error registering visitor:', err);
     res.status(500).json({ error: 'Failed to register visitor' });
   }
 };
