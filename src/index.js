@@ -6,11 +6,11 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ✅ Configure CORS
-const allowedOrigins = [
-  'https://facial-recog-poc-client-3-3720pi1tu-chethiyas-projects-5b0f6d7e.vercel.app',
-  'http://localhost:4200',
-];
+// // ✅ Configure CORS
+// const allowedOrigins = [
+//   'https://facial-recog-poc-client-3-3720pi1tu-chethiyas-projects-5b0f6d7e.vercel.app',
+//   'http://localhost:4200',
+// ];
 
 app.use(cors({
   origin: function (origin, callback) {
