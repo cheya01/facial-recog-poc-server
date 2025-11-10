@@ -85,7 +85,43 @@ exports.getVisitorsByDate = async (req, res) => {
       ]
     });
 
-    res.json(visitors);
+    // Fetch images from S3 for each visitor
+    const visitorsWithImages = await Promise.all(visitors.map(async (visitor) => {
+      try {
+        const imageUrl = visitor.imageUrl;
+        const urlParts = imageUrl.split('.amazonaws.com/');
+        if (urlParts.length < 2) {
+          console.error(`Invalid S3 URL format for visitor ${visitor._id}`);
+          return {
+            ...visitor.toObject(),
+            image: null
+          };
+        }
+        const objectKey = urlParts[1];
+
+        const command = new GetObjectCommand({
+          Bucket: process.env.BUCKET_NAME,
+          Key: objectKey
+        });
+
+        const s3Response = await s3Client.send(command);
+        const imageBuffer = await streamToBuffer(s3Response.Body);
+        const imageBase64 = imageBuffer.toString('base64');
+
+        return {
+          ...visitor.toObject(),
+          image: imageBase64
+        };
+      } catch (error) {
+        console.error(`Error fetching image for visitor ${visitor._id}:`, error);
+        return {
+          ...visitor.toObject(),
+          image: null
+        };
+      }
+    }));
+
+    res.json(visitorsWithImages);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
